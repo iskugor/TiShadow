@@ -19,6 +19,11 @@ TiShadow can be installed via npm using the following command:
   sudo npm install -g tishadow
 ```
 
+**NOTE**: I will endevour to update the npm package on significant changes but
+might lag, so if the app doesn't seem to be playing nicely install the
+server side from source. In general upgrade the server side and app at
+the same time.
+
 Once installed, the server can be started by typing the following
 command:
 
@@ -148,10 +153,8 @@ __Some notes and limitations__
  * CommonJS modules should be required with their full path, ie /
    leading. (This is a better practice anyway given the difference
    between iOS and Android.)
- * Don't use `require` as an object property name.
  * Only files in the Resources directory will will be sent to the device
-   using TiShadow. Localisation
-   and custom changes to the Android Manifest are not supported.
+   using TiShadow. That said, localisation files **are** supported. 
  * Native modules _can_ be supported if built into the TiShadow app
    first. (I.e., add them to the tiapp.xml of the TiShadow app.)
  * If there any errors about a Titanium SDK command not being found, add
@@ -183,7 +186,7 @@ Testing / Assertions
 TiShadow now support [Jasmine](http://pivotal.github.com/jasmine/) BDD tests. 
 Insipration taken from these two projects: [titanium-jasmine](https://github.com/guilhermechapiewski/titanium-jasmine/) and [jasmine-titanium](https://github.com/akahigeg/jasmine-titanium)
 
-Include your specs in the `Resources/specs` path of your project. Ensure
+Include your specs in the `Resources/spec` path of your project. Ensure
 the files are ending in `_spec.js`. (Note: simply write the spec without any including/requiring the jasmine library.)
 
 To execute the tests enter the following command:
@@ -226,6 +229,20 @@ The following assertion are supported:
 Also the equivalent not assertions are available as well, e.g.
 'notEqual', 'isNotString', 'isNotNumber', etc.
  
+
+Configurable Localisation
+-------------------------
+TiShadow now supports localisation. You can also chose the locale locale
+you wish to execute when launch your app/tests. Simply add the
+two-letter language code to your command. For example:
+
+```bash
+  tishadow en
+  tishadow update es
+  tishadow spec nl
+  tishadow spec update es
+```
+
 
 Launch From Web
 ---------------
