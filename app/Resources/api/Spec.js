@@ -2,8 +2,9 @@ var p = require('/api/PlatformRequire');
 var log = require('/api/Log');
 var jasmine = require('/lib/jasmine-1.2.0').jasmine;
 var TiShadowReporter = require('/api/TiShadowReporter');
+var JUnitXMLReporter = require('/api/JUnitXMLReporter');
 
-jasmine.getEnv().addReporter(new TiShadowReporter());
+//jasmine.getEnv().addReporter(new TiShadowReporter());
 
 
 function loadSpecs(name, base, filter) {
@@ -21,7 +22,13 @@ function loadSpecs(name, base, filter) {
   });
 }
 
-exports.run = function (name) {
+exports.run = function (name, junitxml) {
+  jasmine.getEnv().resetReporters();
+  if (junitxml) {
+    jasmine.getEnv().addReporter(new JUnitXMLReporter());
+  } else {
+    jasmine.getEnv().addReporter(new TiShadowReporter());
+  }
   var filter_file = Ti.Filesystem.getFile(Ti.Filesystem.applicationDataDirectory + name + "/spec/specs"); 
   var filter = {};
   if (filter_file.exists()) {

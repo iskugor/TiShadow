@@ -4,32 +4,82 @@ var zipfile = Ti.Platform.osname === "android" ? require("com.yydigital.zip"): r
 var p = require('/api/PlatformRequire');
 var assert = require('/api/Assert');
 var Spec = require("/api/Spec");
+var io = require('/lib/socket.io');
 
 exports.currentApp;
-
-var current;
-Ti.App.addEventListener("tishadow:message", function(message) {
-  try {
-    if(current && current.close !== undefined) {
-      current.close();
-    }
-    current = eval(message.code);
-    if(current && current.open !== undefined) {
-      current.open();
-    }
-    log.info("Deployed");
-  } catch (e) {
-    log.error(utils.extractExceptionData(e));
+var socket, room;
+exports.connect = function(o) {
+  room = o.room;
+  if (socket) {
+    exports.disconnect();
   }
-});
+  socket = io.connect("http://" + o.host + ":"  + o.port);
+
+  socket.on("connect", function() {
+    socket.emit("join", {
+      name : o.name,
+      room : o.room
+    });
+
+    if(o.callback) {
+      o.callback();
+    }
+  });
+
+  socket.on("connect_failed", function() {
+    if(o.onerror) {
+      o.onerror();
+    }
+  });
+  
+  // REPL messages
+  socket.on('message',require('/api/Beach').eval);
+
+  socket.on('bundle', function(data) {
+    if(data.locale) {
+      require("/api/Localisation").locale = data.locale;
+    }
+    loadRemoteZip(data.name, "http://" + o.host + ":" + o.port + "/bundle", data.spec);
+  });
+
+  socket.on('clear', function() {
+    exports.clearCache();
+  });
+
+  socket.on('disconnect', function() {
+    if(o.disconnected) {
+      o.disconnected();
+    }
+    exports.disconnect();
+  });
+
+};
+
+exports.emitLog = function(e) {
+  if (socket) {
+    socket.emit("log", e);
+  }
+};
+
+exports.disconnect = function() {
+  if (socket) {
+    socket.disconnect();
+  }
+};
+
+
+
 
 var bundle;
+exports.closeApp = function(name) {
+  if (bundle && bundle.close !== undefined) {
+      bundle.close();
+      log.info("Previous bundle closed.");
+   }
+};
 exports.launchApp = function(name) {
   try {
-    if (bundle && bundle.close !== undefined) {
-        bundle.close();
-        log.info("Previous bundle closed.");
-    }
+    exports.closeApp();
     p.clearCache();
     require("/api/Localisation").clear();
     Ti.App.fireEvent("tishadow:refresh_list");
@@ -40,6 +90,29 @@ exports.launchApp = function(name) {
     log.error(utils.extractExceptionData(e));
   }
 };
+exports.clearCache = function() {
+  try {
+    var files = Ti.Filesystem.getFile(Ti.Filesystem.applicationDataDirectory).getDirectoryListing();
+    files.forEach(function(file_name) {
+      var file = Ti.Filesystem.getFile(Ti.Filesystem.applicationDataDirectory,file_name);
+      if (Ti.Platform.osname === "android") {
+        if (file.isFile()) {
+          file.deleteFile();
+        } else if (file.isDirectory()) {
+          file.deleteDirectory(true);
+        }
+      } else {
+        file.deleteFile();
+        file.deleteDirectory(true);
+      }
+    });
+    Ti.App.fireEvent("tishadow:refresh_list");
+  } catch (e) {
+    log.error(utils.extractExceptionData(e));
+  }
+  log.info("Cache cleared");
+}
+
 
 function loadRemoteZip(name, url, spec) {
   var xhr = Ti.Network.createHTTPClient();
@@ -61,9 +134,9 @@ function loadRemoteZip(name, url, spec) {
       var dataDir = Ti.Platform.osname === "android" ?  Ti.Filesystem.applicationDataDirectory :  Ti.Filesystem.applicationDataDirectory.slice(0,Ti.Filesystem.applicationDataDirectory.length - 1).replace('file://localhost','').replace(/%20/g,' ');
       zipfile.extract(dataDir+'/' + name + '.zip', dataDir + "/" + path_name);
       // Launch
-      if (spec) {
+      if (spec.run) {
         exports.currentApp = path_name;
-        Spec.run(path_name);
+        Spec.run(path_name, spec.junitxml);
       } else {
         exports.launchApp(path_name);
       }
@@ -74,40 +147,10 @@ function loadRemoteZip(name, url, spec) {
   xhr.onerror = function(e){
     Ti.UI.createAlertDialog({title:'XHR', message:'Error: ' + e.error}).show();
   };
-  xhr.open('GET', url);
+  xhr.open('GET', url + "/" + room);
   xhr.send();
 }
 
-Ti.App.addEventListener("tishadow:bundle", function(o) {
-  if(o.locale) {
-    require("/api/Localisation").locale = o.locale;
-  }
-  loadRemoteZip(o.name, "http://" + Ti.App.Properties.getString("address") + ":3000/bundle", o.spec);
-});
-
-// Clears all apps from cache
-Ti.App.addEventListener("tishadow:clear", function(o) {
-  try {
-    var files = Ti.Filesystem.getFile(Ti.Filesystem.applicationDataDirectory).getDirectoryListing();
-    files.forEach(function(file_name) {
-      var file = Ti.Filesystem.getFile(Ti.Filesystem.applicationDataDirectory,file_name);
-      if (Ti.Platform.osname === "android") {
-        if (file.isFile()) {
-          file.deleteFile();
-        } else if (file.isDirectory()) {
-          file.deleteDirectory(true);
-        }
-      } else {
-        file.deleteFile();
-        file.deleteDirectory(true);
-      }
-    });
-    Ti.App.fireEvent("tishadow:refresh_list");
-  } catch (e) {
-    log.error(utils.extractExceptionData(e));
-  }
-  log.info("Cache cleared");
-});
 
 
 // FOR URL SCHEME - tishadow://

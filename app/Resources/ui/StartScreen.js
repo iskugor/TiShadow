@@ -4,11 +4,14 @@ var Activity = require('/ui/Activity');
 //Includes do not need to be included at runtime, just needed to trick
 //require("/api/Includes");
 var TiShadow = require('/api/TiShadow');
+var NavBar = require("/ui/NavBar");
+Titanium.App.idleTimerDisabled = true;
 
 exports.StartScreen = function() {
   var win = Ti.UI.createWindow({
     backgroundColor : 'white',
     exitOnClose : true,
+    keepScreenOn: true,
     title: "TiShadow",
   });
   var app_list= new (require("/ui/AppList"))();
@@ -18,22 +21,13 @@ exports.StartScreen = function() {
     activity.hide();
   });
 
-  (require("/ui/NavBar")).add({
+  NavBar.add({
     win:win,
     connect: function() {
       login.show();
     }
   });
   var activity = new Activity("Connecting...");
-
-  var webview = Ti.UI.createWebView({
-    url : '/webview.html',
-    top : 0,
-    left : 0,
-    width : 1,
-    height : 1
-  });
-  win.add(webview);
 
   var label = Ti.UI.createLabel({
     text: "Not Connected",
@@ -54,9 +48,29 @@ exports.StartScreen = function() {
   var login = new LoginView();
   login.zIndex = 10;
   function connect() {
-    Ti.App.fireEvent('tishadow:socket_connect', {
-      address : Ti.App.Properties.getString("address"),
-      name : Ti.Platform.osname + ", " + Ti.Platform.version + ", " + Ti.Platform.address
+    TiShadow.connect({
+      host: Ti.App.Properties.getString("address", "localhost"),
+      port: Ti.App.Properties.getString("port", "3000"),
+      room: Ti.App.Properties.getString("room", "default").trim() || "default",
+      name: Ti.Platform.osname + ", " + Ti.Platform.version + ", " + Ti.Platform.address,
+      callback: function(o) {
+        activity.hide();
+        label.text = "Connected";
+        login.hide();
+        NavBar.connectEnabled = false;
+      },
+      onerror: function(o) {
+        activity.hide();
+        alert("Connect Failed");
+        label.text = "Not Connected";
+        login.show();
+        NavBar.connectEnabled = true;
+      },
+      disconnected:  function(o) {
+        label.text = "Not Connected";
+        login.show();
+        NavBar.connectEnabled = true;
+      }
     });
   }
   login.addEventListener("connect", function(o) {
@@ -68,38 +82,9 @@ exports.StartScreen = function() {
     login.open();
   });
 
-
-  // Listeners
-  Ti.App.addEventListener("tishadow:connected", function(o) {
-    activity.hide();
-    alert("Connected");
-    label.text = "Connected";
-    login.hide();
-  });
-
-  Ti.App.addEventListener("tishadow:connectfailed", function(o) {
-    activity.hide();
-    alert("Connect Failed");
-    label.text = "Not Connected";
-    login.show();
-  });
-
-  Ti.App.addEventListener("tishadow:disconnected", function(o) {
-    alert("Disconnected");
-    label.text = "Not Connected";
-    login.show();
-  });
-
   Ti.App.addEventListener("tishadow:refresh_list", function(o) {
     app_list.refreshList();
   });
-  // To fix undetected connection loss when app backgrounded on iOS
-  if (Ti.Platform.osname!=="android"){
-    Ti.App.addEventListener("resumed", function() {
-      Ti.App.fireEvent('tishadow:socket_disconnect');
-      connect();
-    });
-  }
 
   return win;
 };

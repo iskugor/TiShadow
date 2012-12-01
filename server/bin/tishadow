@@ -1,216 +1,89 @@
 #!/usr/bin/env node
-var path = require("path"),
-    fs = require("fs"),
-    http = require("http"),
-    util = require("util"),
-    zipstream = require("zipstream"),
-    xml2js = require("xml2js"),
-    base = process.cwd(),
-    last_update,
-    file_list;
+var
+    api      = require('./support/api'),
+    compiler = require('./support/compiler'),
+    colors   = require('colors'),
+    config   = require('./support/config'),
+    pkginfo  = require('pkginfo'),
+    program  = require('commander')
+    ;
 
-function postToServer(path, data) {
-  var jdata = JSON.stringify(data||{});
-  var post_options = {
-    host: 'localhost',
-    port: '3000',
-    path: path,
-    method: 'POST',
-    headers: {
-      "Content-Type" : "application/json",
-      "Content-Length":jdata.length
-    } 
-  };
-  var req = http.request(post_options, function(res) {
-    res.setEncoding('utf8');
-    res.on('data', function (chunk) {
-      console.log('Response: ' + chunk);
-    });
-  }); 
-  req.write(jdata);
-  req.end(); 
-}
 
-// Get Filelist with optional "update" filter
-function getFileList(start, _path) {
-  var files = [], dirs=[];
-  var stat = fs.statSync(start);
-  if (stat.isDirectory()) {
-    var filenames = fs.readdirSync(start);
-    var coll = filenames.reduce(function (acc, name) {
-      var abspath = path.join(start, name);
-      var file_stat = fs.statSync(abspath);
-      if (file_stat.isDirectory()) {
-        acc.dirs.push(name);
-      } else {
-        if (last_update === undefined || last_update < file_stat.mtime) {
-          acc.names.push(path.join(_path || "." , name));
-        }
-      }
-      return acc;
-    }, {"names": [], "dirs": []});
-    files = coll.names;
-    coll.dirs.forEach(function (d) {
-      var abspath = path.join(start, d);
-      var relpath = path.join(_path|| ".", d);
-      dirs.push(relpath);
-      var recurs = getFileList(abspath, relpath);
-      files = files.concat(recurs.files);
-      dirs = dirs.concat(recurs.dirs);
-    });
-  }
-  return {files: files, dirs: dirs};
-};
+pkginfo(module, 'name', 'version');
 
-// Recursively Remove Directories
-var rmdir = function(dir) {
-  var list = fs.readdirSync(dir);
-  for(var i = 0; i < list.length; i++) {
-    var filename = path.join(dir, list[i]);
-    var stat = fs.statSync(filename);
-    if(filename == "." || filename == "..") {
-    } else if(stat.isDirectory()) {
-      rmdir(filename);
-    } else {
-      fs.unlinkSync(filename);
-    }
-  }
-  fs.rmdirSync(dir);
-};
-// Builds directory structure
-function buildDirs(rel_root, dirs) {
-  dirs.forEach(function(dir) {
-    if (!path.existsSync(path.join(rel_root,dir)) ){
-      fs.mkdirSync(path.join(rel_root,dir));
-    }
+program
+  .version(module.exports.version, '-v, --version')
+  .description('TiShadow CLI')
+  .usage('COMMAND [OPTIONS]');
+
+program.command('server')
+  .description('start the TiShadow server'.grey)
+  .option('-p, --port <port>', 'server port')
+  .option('-l, --long-polling', 'force long polling')
+  .action(function(env) {
+    config.init(env);
+    require("../app.js");
   });
+
+program.command('clear')
+  .description('clear the application cache on all connected devices'.grey)
+  .action(api.clearCache);
+
+program.command('run')
+  .description('deploy full application to all connected devices'.grey)
+  .option('-u, --update', 'only send recently changed files')
+  .option('-l, --locale <locale>', 'set the locale in in the TiShadow app')
+  .option('-j, --jshint', 'analyse code with JSHint')
+  .option('-t, --tail-logs', 'tail server logs on deploy')
+  .option('-o, --host <host>', 'server host name / ip address')
+  .option('-p, --port <port>', 'server port')
+  .option('-r, --room <room>', 'server room')
+  .action(compiler);
+
+program.command('bundle')
+  .description('prepare a TiShadow bundle without deploying it'.grey)
+  .option('-j, --jshint', 'analyse code with JSHint')
+  .action(compiler);
+
+program.command('spec')
+  .description('run jasmin spec tests on all connected devices'.grey)
+  .option('-u, --update', 'only send recently changed files')
+  .option('-l, --locale <locale>', 'set the locale in in the TiShadow app')
+  .option('-o, --host <host>', 'server host name / ip address')
+  .option('-p, --port <port>', 'server port')
+  .option('-r, --room <room>', 'server room')
+  .option('-j, --jshint', 'analyse code with JSHint')
+  .option('-x, --junit-xml','output report as JUnit XML')
+  .action(compiler);
+
+program.command('repl')
+  .description('launch REPL'.grey)
+  .option('-o, --host <host>', 'server host name / ip address')
+  .option('-p, --port <port>', 'server port')
+  .option('-r, --room <room>', 'server room')
+  .action(api.sendSnippet);
+  
+program.command('log')
+  .description('tail server logs'.grey)
+  .option('-o, --host <host>', 'server host name / ip address')
+  .option('-p, --port <port>', 'server port')
+  .option('-r, --room <room>', 'server room')
+  .action(require('./support/socket').connect);
+
+program.command('config')
+  .description('set default configuration settings'.grey)
+  .option('-o, --host <host>', 'set default server host name / ip address')
+  .option('-p, --port <port>', 'set default server port')
+  .option('-r, --room <room>', 'set default server room')
+  .action(config.write);
+
+
+
+program.parse(process.argv);
+
+// Display help on an invalid command
+if (program.args.length === 0 || typeof program.args[program.args.length -1] === 'string'){
+  program.help();
 }
-// Copies all Resource files and prepares JS files
-function prepare(app_name, src, dst) {
-  if (src.match("js$") && !src.match("underscore.js$")) {
-    var src_text = "try { var p = require('/api/PlatformRequire'), log = require('/api/Log'), assert = require('/api/Assert');\n" 
-      + fs.readFileSync(src).toString()
-      .replace(/Ti(tanium)?.Filesystem.(resourcesDirectory|getResourcesDirectory\(\))/g, "Ti.Filesystem.applicationDataDirectory + '"+app_name.replace(/ /g,"_")+"/'")
-      .replace(/require\((?!(['"]))/g, "p.require(Ti.Filesystem.applicationDataDirectory+'"+app_name.replace(/ /g,"_")+"/',$1")
-      .replace(/require\((['"])\//g, "p.require(Ti.Filesystem.applicationDataDirectory+'"+app_name.replace(/ /g,"_")+"/',$1")
-      .replace(/(['"])\//g, "Ti.Filesystem.applicationDataDirectory+'"+app_name.replace(/ /g,"_")+"/'+$1")
-      .replace(/Ti(tanium)?.API/g, "log");
-    if (src.match("_spec.js$")) {
-      src_text =  "var jasmine = require('/lib/jasmine-1.2.0');var methods = ['spyOn','it','xit','expect','runs','waits','waitsFor','beforeEach','afterEach','describe','xdescribe'];methods.forEach(function(method) {this[method] = jasmine[method];});"
-        +src_text;
-    }
-    src_text += '} catch(e) { var utils = require("/api/Utils"); e.file="' + src + '"; log.error(utils.extractExceptionData(e)); }';
-    fs.writeFileSync(dst,src_text);
-  } else { // Non-JS file - just pump it
-    var  is = fs.createReadStream(src);
-    var  os = fs.createWriteStream(dst);
-    util.pump(is, os);
-  }
-}
 
-function zipbundle(name, files, callback, zip) {
-  var out;
-  if (zip === undefined) {
-    out = fs.createWriteStream(path.join(base, "build", "tishadow", "dist", name + ".zip"));
-    zip = zipstream.createZip({level:1});
-  }
-  if (files.length === 0) {
-    zip.finalize(callback);
-  } else {
-    var tail = files.splice(1);
-    zip.addFile(fs.createReadStream(path.join(base,"build","tishadow","src",files[0])), {name: files[0]}, function() {
-      zipbundle(name, tail,callback,zip);
-    });
-  }
-  if (out) {
-    zip.pipe(out);
-  }
-}
 
-function touch() {
-  var last_update_file = path.join(base, "build", "tishadow", "last_updated");
-  if (path.existsSync(last_update_file)) {
-    var now = new Date();
-    fs.utimesSync(last_update_file,now,now);
-  } else {
-    fs.writeFileSync(last_update_file,"");
-  }
-}
-
-//get app name
-function getAppName(callback) {
-  var parser = new xml2js.Parser();
-  fs.readFile(path.join(base,'tiapp.xml'), function(err, data) {
-    parser.parseString(data, function (err, result) {
-      callback(result);
-    });
-  });
-}
-
-var cmd = process.argv[2];
-var cmd2 = process.argv[3];
-if (cmd === "server") {
-  require("../app.js");
-} else if (cmd === "clear") {
-  postToServer("/clear_cache");
-} else {
-  if (!path.existsSync(path.join(base,'tiapp.xml'))) {
-    console.log("Script must be executed in the Titanium project's root directory");
-    process.exit();
-  }
-
-  console.log("Beginning Build Process");
-
-  getAppName(function(result) {
-    var app_name = result.name || "bundle";
-
-    if(path.existsSync(path.join(base, 'build', 'tishadow', 'src')) 
-       && path.existsSync(path.join(base, 'build', 'tishadow', 'last_updated'))
-     && (cmd == "update" || cmd2 == "update")) {
-       var last_stat = fs.statSync(path.join(base, 'build', 'tishadow', 'last_updated'));
-       last_update = last_stat.mtime;
-       file_list = getFileList(path.join(base, 'Resources'));
-       if (file_list.files.length === 0) {
-         console.log("Nothing to update.");
-         process.exit();
-       }
-     } else {
-       if (!path.existsSync(path.join(base,'build'))){
-         fs.mkdirSync(path.join(base,'build'), 0755);
-       }
-       //Clean Build
-       if (path.existsSync(path.join(base,'build','tishadow'))) {
-         rmdir(path.join(base,'build','tishadow'));
-       }
-       // Create the tishadow build paths
-       fs.mkdirSync(path.join(base,'build','tishadow'), 0755);
-       fs.mkdirSync(path.join(base,'build','tishadow','src'), 0755);
-       fs.mkdirSync(path.join(base,'build','tishadow','dist'), 0755);
-       file_list = getFileList(path.join(base, 'Resources'));
-     }
-
-     // Process  Files
-     buildDirs(path.join(base,'build','tishadow','src'), file_list.dirs);
-     var end;
-     file_list.files.forEach(function(file, idx) {
-       setTimeout(function(){
-         prepare(app_name, path.join(base,'Resources',file), path.join(base,'build','tishadow','src', file));
-       }, idx * 1);
-       end = idx;
-     });
-
-     // Bundle up to go
-     setTimeout(function() {
-       var total = file_list.files.length;
-       zipbundle(app_name, file_list.files,function(written) { 
-         console.log(total+ " file(s) bundled."); 
-         touch();
-         if (cmd === "bundle") {
-           console.log("Bundle Ready: " +  path.join(base,"build","tishadow","dist",app_name + ".zip"));
-         } else {
-           postToServer("/", {bundle:path.join(base,"build","tishadow","dist",app_name + ".zip"), spec: cmd === "spec"});
-         } 
-       });
-     }, (end + 1)* 1);
-  });
-}
