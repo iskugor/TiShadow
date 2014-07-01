@@ -1,21 +1,25 @@
-var log = require("/api/Log");
-var utils = require("/api/Utils");
-var os = Ti.Platform.osname;
-var tishadow_version = Ti.version.replace(/tishadow_?/,"").replace(/\./g,"");
+/*
+ * Copyright (c) 2011-2014 YY Digital Pty Ltd. All Rights Reserved.
+ * Please see the LICENSE file included with this distribution for details.
+ */
 
+var log = require("/api/Log"),
+    utils = require("/api/Utils"),
+    densityFile = require("/api/DensityAssets"),
+    os = Ti.Platform.osname,
+    _ = require("/lib/underscore"),
+    global_context = this,
+    global_keys,
+    cache={},
+    spys = {};
 
-// The TiShadow build of the Titanium SDK does not cache CommonJS modules loaded
-// from the applicationDataDirectory. This is so that if an update to the app is
-// deployed, i.e. a file in the applicationDataDirectory is modified, the changes
-// while be loaded. That said loading a CommonJS module every time that it is loaded
-// make the deployed bundle run slowly. So we will manage the caching of those
-// modules here in the code.
-var cache={};
-
+/*
+ * require() override
+ */
 function custom_require(file) {
   try {
     log.info("Requiring: " + file);
-    var rfile = Ti.Filesystem.getFile(file + ".js");
+    var rfile = Ti.Filesystem.getFile(file);
     var contents = rfile.read().text;
     return eval("(function(exports){var __OXP=exports;var module={'exports':exports};" + contents + ";if(module.exports !== __OXP){return module.exports;}return exports;})({})");
   } catch(e) { 
@@ -27,10 +31,10 @@ function custom_require(file) {
 exports.require = function(extension) {
   try {
     // Full Path
-    var path = extension;
-    if (extension.indexOf(".") === -1 || extension.indexOf("/") > -1) {
-      path = exports.file(extension);
-    } else { // NATIVE MODULE
+    var path = exports.file(extension + ".js");
+    // Assuming that it is a native module if the path does not exist
+    if (!Ti.Filesystem.getFile(path).exists()) {
+      log.debug("Native module:" + extension);
       return require(extension);
     }
     // Is the CommonJS module in the cache
@@ -45,48 +49,146 @@ exports.require = function(extension) {
   }
 };
 
-exports.include = function(context) {
+/*
+ * Ti.include() override (only used once in /api/TiShadow.js));
+ */
+exports.include = function(context, file) {
   try {
-    // Full Path
-    for (var i = 1, length = arguments.length; i< length; i++) {
-      var path = exports.file(arguments[i]);
-      var ifile = Ti.Filesystem.getFile(path);
-      var contents = ifile.read().text;
-      eval.call(context, contents);
-    }
+    var path = exports.file(file);
+    var ifile = Ti.Filesystem.getFile(path);
+    var contents = ifile.read().text;
+    eval.call(context || global_context, contents);
   } catch(e) {
     log.error(utils.extractExceptionData(e));
   }
 };
+/*
+ * Read all file content
+ */
+exports.fileContent = function(context) {
+  var contents="";
+  for (var i = 0, length = arguments.length; i< length; i++) {
+    var path = exports.file(arguments[i]);
+    var ifile = Ti.Filesystem.getFile(path);
+    contents += ifile.read().text + "\n";
+  }
+  return contents;
+};
 
-
+/*
+ * Asset Redirection
+ */
 exports.file = function(extension) {
-  if (extension === "/" || extension === "//" ) { // Avoid conflicts with Backbone.js
+  if (_.isArray(extension)) {
+    return extension.map(exports.file);
+  } else if (typeof extension !== "string") {
     return extension;
   }
-  var base = Ti.Filesystem.applicationDataDirectory + "/" + require("/api/TiShadow").currentApp + "/";
-  // In case of double mapping (if required from variable/s)
-  if (extension.indexOf(base) !== -1) {
-    var regex = new RegExp(base, 'g');
-    extension = extension.replace(regex, "/");
-    if (extension.indexOf("/") === 0) {
-      extension = extension.substring(1);
+  extension = extension.replace(/^\//, '');
+  var base = Ti.Filesystem.applicationDataDirectory + require("/api/TiShadow").currentApp + "/";
+  if (extension.indexOf(base) !== -1) { 
+    extension = extension.replace(base,"");
+  }
+  var path = base + extension,
+  platform_path =  base + (os === "android" ? "android" : "iphone") + "/" + extension;
+  var isImage = extension.toLowerCase().match("\\.(png|jpg)$");
+  if (!isImage) {
+    var file = Ti.Filesystem.getFile(platform_path);
+    if (file.exists()) {
+      return platform_path;
+    }
+  } else { 
+    var platform_dense = densityFile.find(platform_path);
+    if (null !== platform_dense) {
+      return platform_dense;
     }
   }
-  // Full Path
-  var path = base + extension;
-  //Try platform specific path first
-  var platform_path =  base + (os === "android" ? "android" : "iphone") + "/" + extension;
-  //Add ".js" for CommonJS inclusion lookups.
-  var extension_parts = extension.split("/");
-  var needsJS = extension_parts[extension_parts.length-1].indexOf(".") === -1;
-  var file = Ti.Filesystem.getFile(platform_path + (needsJS ? ".js" : ""));
-  if (file.exists()) {
-    path = platform_path;
+
+  if (Ti.Filesystem.getFile(path).exists()) {
+    return path;
   }
-  return path;
+  return extension;
 };
 
-exports.clearCache = function () {
-  cache = {};
+/*
+ * clear require and global cache
+ */
+// if a list of files is provided it will selectively clear the cache
+exports.clearCache = function (list) {
+  if (_.isArray(list)) {
+    list.forEach(function(file) {
+      if (file.match(".js$")) {
+        cache[exports.file(file.replace(/.js$/,""))] = null;
+        cache[exports.file("/" + file.replace(/.js$/,""))] = null;
+      }
+    });
+  } else {
+    cache = {};
+  }
+  for (var a in global_context) {
+    if (global_context.hasOwnProperty(a) && !_.contains(global_keys, a)) {
+      delete global_context[a];
+    }
+  }
 };
+
+/*
+ * clear require and global cache using a regular expression. any file
+ * that matches will be removed.
+ */
+exports.clearCacheWithRegEx = function (regex) {
+  for (var key in cache) {
+    if (cache.hasOwnProperty(key) && key.match(regex)) {
+      log.debug('Clearing: ' + key + ' from the require cache');
+      delete cache[key];
+    }
+  }
+  for (var a in global_context) {
+    if (global_context.hasOwnProperty(a) && !_.contains(global_keys, a) && a.match(regex)) {
+      log.debug('Clearing: ' + a + ' from global context');
+      delete global_context[a];
+    }
+  }
+};
+
+/*
+ * new repl
+ */
+exports.eval = function(message) {
+  try {
+    __log.repl(eval.call(global_context, message.code));
+  } catch (e) {
+    __log.error(require('/api/Utils').extractExceptionData(e));
+  }
+};
+
+exports.addSpy = function(name,spy) {
+  spys[name]=spy;
+};
+
+/*
+ * inject global functions
+ */
+(function(context) {
+  context.__log = require('/api/Log');
+  context.__p = exports;
+  context.__ui = require('/api/UI');
+  context.__app = require('/api/App');
+  context.L = require('/api/Localisation').fetchString;
+  context.assert = require('/api/Assert');
+  context.closeApp =require('/api/TiShadow').closeApp;
+  context.launchApp = require('/api/TiShadow').nextApp;
+  context.clearCache = require('/api/TiShadow').clearCache;
+  context.runSpec = function() {
+    var path_name = require('/api/TiShadow').currentApp.replace(/ /g,"_");
+    require("/api/Spec").run(path_name, false);
+  };
+  context.addSpy = exports.addSpy;
+  context.getSpy = function(name) {
+    return spys[name];
+  };
+  context.Ti.Shadow = true;
+})(global_context);
+//Needed for Android
+Ti.Shadow = true;
+global_keys = _.keys(global_context);

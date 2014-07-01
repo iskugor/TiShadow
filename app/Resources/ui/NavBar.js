@@ -1,4 +1,9 @@
-var connect_button = Ti.UI.createButton({title:'Connect', top: '5dp', width: "60dp", height: "30dp", left: "10dp"});
+/*
+ * Copyright (c) 2011-2014 YY Digital Pty Ltd. All Rights Reserved.
+ * Please see the LICENSE file included with this distribution for details.
+ */
+
+var connect_button = Ti.UI.createButton({title:'Connect', color: '#2192E3', left: "10dp", width: Ti.UI.SIZE});
 
 module.exports = {
   add: function(o) {
@@ -11,38 +16,36 @@ module.exports = {
 
       var title = Ti.UI.createLabel({
         text:"TiShadow",
-        color:'white',
         font:{
           fontSize:18,
-          fontWeight:'bold' 
+          fontWeight:'bold'
         }
       });
 
-      var bar = Ti.UI.createToolbar({
+      var bar = Ti.UI.iOS.createToolbar({
         items:[connect_button,flexSpace, title, flexSpace],
         top:0,
-        barColor:'#adbedd',
+        barColor:'#f8f8f8',
         height:40
       });
 
       o.win.add(bar);
     } else {
       var view = Ti.UI.createView({
-        height: "40dp",
+        height: "50dp",
         width: Ti.UI.FILL,
         top: 0,
-        backgroundColor: '#adbedd'
+        backgroundColor: '#f8f8f8'
       });
-      connect_button.backgroundColor = '#adbedd';
-      connect_button.borderRadius = 5;
-      connect_button.borderColor = 'black';
-      connect_button.borderWidth = 1;
-      connect_button.width = "90dp";
+      connect_button.backgroundColor = '#f8f8f8';
       view.add(connect_button);
       o.win.add(view);
     }
   },
-  get connectEnabled() { return connect_button.enabled; },
-  set connectEnabled(val) { connect_button.enabled = val;}
+  setConnected: function(val) {
+    connect_button.connected = val;
+    connect_button.title = val ? "Disconnect" : "Connect";
+    connect_button.width = Ti.UI.SIZE;
+  }
 }
 

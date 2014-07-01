@@ -7,23 +7,23 @@
         <target device="android">true</target>
         <target device="blackberry">false</target>
     </deployment-targets>
-    <sdk-version>2.1.4.GA</sdk-version>
-    <id>com.yydigital.tishadowapp</id>
+    <sdk-version>3.2.2.GA</sdk-version>
+    <id>{{APPID}}</id>
     <name>TiShadow</name>
     <version>1.0</version>
     <publisher>YY Digital Pty Ltd</publisher>
     <url>http://www.yydigital.com</url>
     <description>not specified</description>
-    <copyright>2012 by YY Digital Pty Ltd</copyright>
+    <copyright>2012-2014 by YY Digital Pty Ltd</copyright>
     <icon>appicon.png</icon>
     <persistent-wifi>false</persistent-wifi>
     <prerendered-icon>false</prerendered-icon>
     <statusbar-style>default</statusbar-style>
     <statusbar-hidden>false</statusbar-hidden>
     <fullscreen>false</fullscreen>
-    <navbar-hidden>false</navbar-hidden>
+    <navbar-hidden>true</navbar-hidden>
     <analytics>false</analytics>
-    <guid>276f242f-e730-4a6f-b3d6-127e88936de5</guid>
+    <guid>{{GUID}}</guid>
     <iphone>
         <orientations device="iphone">
             <orientation>Ti.UI.PORTRAIT</orientation>
@@ -36,9 +36,10 @@
             <orientation>Ti.UI.LANDSCAPE_RIGHT</orientation>
         </orientations>
     </iphone>
-    <property name="ti.android.bug2373.finishfalseroot" type="bool">true</property>
+    <property name="ti.android.bug2373.finishfalseroot" type="bool">false</property>
+    <property name="ti.android.bug2373.skipAlert" type="bool">true</property>
     <android xmlns:android="http://schemas.android.com/apk/res/android">
-      <manifest android:versionCode="5" android:versionName="1.1.1">
+      <manifest android:versionCode="6" android:versionName="1.5.0">
     		<!-- http://stackoverflow.com/questions/7523075/xml-android-permissions-list-full-->
     		<uses-permission android:name="android.permission.ACCESS_CHECKIN_PROPERTIES" />
         <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -166,15 +167,20 @@
         <uses-feature android:name='android.hardware.wifi' android:required="false" />
         <uses-feature android:name='android.hardware.touchscreen' android:required="false" />
         <uses-feature android:name='android.hardware.telephony' android:required="false" />
-
+        <uses-library android:required="false" android:name="com.sec.android.app.multiwindow"/>
+        <application>
+          <meta-data android:name="com.sec.android.support.multiwindow" android:value="true"/>
+        </application>
     	</manifest>
     </android>
-    <modules>
-        <module platform="iphone" version="0.3">net.iamyellow.tiws</module>
-        <module platform="android" version="0.1">net.iamyellow.tiws</module>
-        <module platform="iphone" version="0.1.21">zipfile</module>
-        <module platform="android" version="0.2">com.yydigital.zip</module>
-        <module platform="android" version="1.0">ti.physicalSizeCategory</module>
-        <module platform="commonjs" version="2.3.0">ti.cloud</module>
-    </modules>
+    	<modules>
+		<module platform="android" version="0.1">net.iamyellow.tiws</module>
+		<module platform="android" version="2.0.3">ti.compression</module>
+		<module platform="android" version="0.1">yy.logcatcher</module>
+		<module platform="iphone" version="0.3">net.iamyellow.tiws</module>
+		<module platform="iphone" version="1.0.2">ti.compression</module>
+		<module platform="iphone" version="0.1">yy.logcatcher</module>
+		<module platform="iphone" version="0.1">yy.tidynamicfont</module>
+	</modules>
+
 </ti:app>

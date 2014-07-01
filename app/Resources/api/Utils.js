@@ -1,9 +1,18 @@
+/*
+ * Copyright (c) 2011-2014 YY Digital Pty Ltd. All Rights Reserved.
+ * Please see the LICENSE file included with this distribution for details.
+ */
+
 
 //get platform specific exception data
 var extractExceptionData;
 
 if (Ti.UI.Android) {
 	extractExceptionData = function(e) {
+    if (e.stack === undefined) {
+      return JSON.stringify(e);
+    }
+
 		var temp = e.stack.split("\n");
 		var myerror = {};
 		var exceptionTypeAndMessage = temp[0].split(":");

@@ -1,7 +1,13 @@
+/*
+ * Copyright (c) 2011-2014 YY Digital Pty Ltd. All Rights Reserved.
+ * Please see the LICENSE file included with this distribution for details.
+ */
+
 var log = require("/api/Log");
 
-var TiShadowReporter = function() {
-}
+var TiShadowReporter = function(onComplete) {
+	this.onComplete = onComplete;
+};
 
 var ansi = {
   green: '\033[32m',
@@ -11,7 +17,7 @@ var ansi = {
   white: '\033[37m',
   bold_on:'\033[1m',
   bold_off:'\033[22m',
-}
+};
 
 function summaryLine(passed, failed, type) {
   if (failed === 0) {
@@ -20,7 +26,6 @@ function summaryLine(passed, failed, type) {
     log.fail("x "+ failed + " of " + (passed + failed) + " " + type + "(s) failed."); 
   }
 }
-
 
 TiShadowReporter.prototype = {
   reportRunnerStarting: function () {
@@ -39,6 +44,8 @@ TiShadowReporter.prototype = {
   reportRunnerResults: function () {
     log.test("");
     summaryLine(this.total.passed, this.total.failed, "spec");
+    
+    this.onComplete();
     log.test("Runner Finished");
   },
   reportSpecStarting: function (spec) {
@@ -84,6 +91,6 @@ TiShadowReporter.prototype = {
   log: function(str) {
     log.info("  " + str);
   }
-}
+};
 
 module.exports = TiShadowReporter;
